@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 from google import genai
 from jinja2 import Template
+import re
 
 # Load environment variables
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -201,6 +202,37 @@ if evaluate_btn:
                     model="gemini-2.5-flash",
                     contents=contents
                 )
-                st.text_area("Gemini Output", value=resp.text, height=300, key="gemini_output")
+                # --- Extract rating using regex ---
+                match = re.search(r"Rating:\*\*\s*(\d+)/(\d+)", resp.text)
+                if match:
+                    score = int(match.group(1))
+                    total = int(match.group(2))
+                    rating = score / total  # normalized value 0–1
+
+                    # --- Choose color based on score ---
+                    if rating >= 0.8:
+                        color = "green"
+                    elif rating >= 0.5:
+                        color = "orange"
+                    else:
+                        color = "red"
+
+                    # --- Display rating and meter ---
+                    st.markdown(f"### Suitability Score: **{score}/{total}**")
+                    st.markdown(
+                        f"""
+                        <div style="background-color: lightgray; border-radius: 8px; width: 100%; height: 25px;">
+                            <div style="width: {rating*100}%; 
+                                        background-color: {color}; 
+                                        height: 100%; 
+                                        border-radius: 8px;">
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.warning("No rating found in text.")
+                # st.text_area("Gemini Output", value=resp.text, height=300, key="gemini_output")
             except Exception as e:
                 st.error(f"Error calling Gemini API: {str(e)}")

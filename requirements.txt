@@ -4,3 +4,4 @@ python-dotenv
 google-genai
 Jinja2
 openpyxl
+plotly

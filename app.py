@@ -14,6 +14,10 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 
 st.set_page_config(layout="wide")
 
+def clear_text_areas():
+    st.session_state.prompt_input = ""
+    st.session_state.response_input = ""
+
 # --- Load Excel file ---
 @st.cache_data
 def load_data():
@@ -160,12 +164,13 @@ with input_col1:
     prompt = st.text_area("Enter Prompt", height=200, key="prompt_input")
 
 with input_col2:
-    response = st.text_area("Enter Response (Optional)", height=200, key="response_input")
+    response = st.text_area("Enter Response", height=200, key="response_input")
 
 # Center the evaluate button
 col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
     evaluate_btn = st.button("Evaluate", type="primary", use_container_width=True)
+    clear_btn = st.button("Clear", type="primary", use_container_width=True, on_click=clear_text_areas)
 
 if evaluate_btn:
     if not prompt.strip():

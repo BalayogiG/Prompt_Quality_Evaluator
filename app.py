@@ -4,6 +4,7 @@ import streamlit as st
 from google import genai
 from jinja2 import Template
 import re
+import plotly.graph_objects as go
 
 # Load environment variables
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -204,30 +205,47 @@ if evaluate_btn:
                 if match:
                     score = int(match.group(1))
                     total = int(match.group(2))
-                    rating = score / total  # normalized value 0–1
-
-                    # --- Choose color based on score ---
-                    if rating >= 0.8:
-                        color = "green"
-                    elif rating >= 0.5:
-                        color = "orange"
-                    else:
-                        color = "red"
-
-                    # --- Display rating and meter ---
-                    st.markdown(f"##### Suitability Score: **{score}/{total}**")
-                    st.markdown(
-                        f"""
-                        <div style="background-color: lightgray; border-radius: 8px; width: 100%; height: 15px;">
-                            <div style="width: {rating*100}%; 
-                                        background-color: {color}; 
-                                        height: 100%; 
-                                        border-radius: 8px;">
-                            </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
+                    percentage = (score / total) * 100
+                    fig = go.Figure(
+                        go.Indicator(
+                            mode="gauge+number",
+                            value=percentage,
+                            number={'suffix': "%", 'font': {'size': 18}},   # very small number font
+                            title={'text': "QUALITY", 'font': {'size': 14}}, # small title font
+                            gauge={
+                                'axis': {
+                                    'range': [0, 100],
+                                    'tickmode': 'array',
+                                    'tickvals': [10, 30, 50, 70, 90],
+                                    'ticktext': ["VB", "Bad", "Norm", "Good", "Ex"], # shorter labels
+                                    'tickfont': {'size': 10}
+                                },
+                                'bar': {'color': "black", 'thickness': 0.2},
+                                'steps': [
+                                    {'range': [0, 20], 'color': "firebrick"},
+                                    {'range': [20, 40], 'color': "orangered"},
+                                    {'range': [40, 60], 'color': "gold"},
+                                    {'range': [60, 80], 'color': "yellowgreen"},
+                                    {'range': [80, 100], 'color': "green"}
+                                ],
+                                'threshold': {
+                                    'line': {'color': "black", 'width': 2},
+                                    'thickness': 0.75,
+                                    'value': percentage
+                                }
+                            }
+                        )
                     )
+
+                    # Compact chart size
+                    fig.update_layout(
+                        autosize=False,
+                        width=250,   # smaller width
+                        height=200,  # smaller height
+                        margin=dict(l=10, r=10, t=30, b=10)
+                    )
+
+                    st.plotly_chart(fig, use_container_width=False)
                 else:
                     st.warning("No rating found in text.")
                 result = str(resp.text)

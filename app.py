@@ -199,7 +199,6 @@ if evaluate_btn:
                     model="gemini-2.5-flash",
                     contents=contents
                 )
-                st.text_area("Results", value=resp.text, height=300, key="Results")
                 # --- Extract rating using regex ---
                 match = re.search(r"Rating:\s*(\d+)/(\d+)", resp.text)
                 if match:

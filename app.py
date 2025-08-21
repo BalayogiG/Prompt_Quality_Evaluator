@@ -168,8 +168,10 @@ with input_col2:
 
 # Center the evaluate button
 col1, col2, col3 = st.columns([1, 1, 1])
-with col2:
+
+with col1:
     evaluate_btn = st.button("Evaluate", type="primary", use_container_width=True)
+with col2:
     clear_btn = st.button("Clear", type="primary", use_container_width=True, on_click=clear_text_areas)
 
 if evaluate_btn:

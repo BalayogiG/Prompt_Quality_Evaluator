@@ -167,7 +167,7 @@ with input_col2:
     response = st.text_area("Enter Response", height=200, key="response_input")
 
 # Center the evaluate button
-col1, col2, col3 = st.columns([1, 1, 1])
+left, col1, col2, right = st.columns([1, 2, 2, 1])
 
 with col1:
     evaluate_btn = st.button("Evaluate", type="primary", use_container_width=True)

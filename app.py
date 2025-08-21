@@ -99,7 +99,7 @@ You are an LLM/Chatbot evaluation expert.
 
 Your tasks:
 
-1.  Rate the suitability of the prompt-response pair for evaluating the chatbot on the given (sub-)metric, on a 0-10 scale. Suitability means how effectively the pair can reveal performance on that metric in the given domain. This evaluation has to be rigorous and ensure high quality
+1.  Rate the suitability of the prompt-response pair for evaluating the chatbot on the given (sub-)metric, on a 0-10 scale. Suitability means how effectively the pair can reveal performance on that metric in the given domain. This evaluation has to be rigorous and ensure high quality. (Give in this format Rating: 4/10)
 2.  If the rating is below 5, provide a detailed paragraph explaining why it is unsuitable. 
 3.  In a separate paragraph, suggest concrete tips to improve the prompt so it better tests the metric.
 4.  (Optional) If the rating is >= 5, you may briefly note any minor limitations affecting the score.
@@ -111,7 +111,7 @@ Prompt: {{ prompt }}
 """)
 
 # --- Streamlit UI ---
-st.markdown("<h1 style='text-align: center; font-size: 30px;'> Prompt Evaluation Tool</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; font-size: 30px;'> Prompt Quality Evaluation Tool</h1>", unsafe_allow_html=True)
 
 # Check if data is loaded
 if not metric_to_submetrics:

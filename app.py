@@ -196,68 +196,63 @@ if evaluate_btn:
         )
         
         # Tabs for different outputs
-        tab1, tab2 = st.tabs(["Template Output", "Results"])
-        
-        with tab1:
-            st.text_area("Generated Template", value=contents, height=300, key="template_output")
-        
-        with tab2:
-            try:
-                resp = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=contents
-                )
-                # --- Extract rating using regex ---
-                match = re.search(r"Rating:\s*(\d+)/(\d+)", resp.text)
-                if match:
-                    score = int(match.group(1))
-                    total = int(match.group(2))
-                    percentage = (score / total) * 100
-                    fig = go.Figure(
-                        go.Indicator(
-                            mode="gauge+number",
-                            value=percentage,
-                            number={'suffix': "%", 'font': {'size': 18}},   # very small number font
-                            title={'text': "QUALITY", 'font': {'size': 14}}, # small title font
-                            gauge={
-                                'axis': {
-                                    'range': [0, 100],
-                                    'tickmode': 'array',
-                                    'tickvals': [10, 30, 50, 70, 90],
-                                    'ticktext': ["VB", "Bad", "Norm", "Good", "Ex"], # shorter labels
-                                    'tickfont': {'size': 10}
-                                },
-                                'bar': {'color': "black", 'thickness': 0.2},
-                                'steps': [
-                                    {'range': [0, 20], 'color': "firebrick"},
-                                    {'range': [20, 40], 'color': "orangered"},
-                                    {'range': [40, 60], 'color': "gold"},
-                                    {'range': [60, 80], 'color': "yellowgreen"},
-                                    {'range': [80, 100], 'color': "green"}
-                                ],
-                                'threshold': {
-                                    'line': {'color': "black", 'width': 2},
-                                    'thickness': 0.75,
-                                    'value': percentage
-                                }
+        st.tabs(["Results"])
+        try:
+            resp = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=contents
+            )
+            # --- Extract rating using regex ---
+            match = re.search(r"Rating:\s*(\d+)/(\d+)", resp.text)
+            if match:
+                score = int(match.group(1))
+                total = int(match.group(2))
+                percentage = (score / total) * 100
+                fig = go.Figure(
+                    go.Indicator(
+                        mode="gauge+number",
+                        value=percentage,
+                        number={'suffix': "%", 'font': {'size': 18}},   # very small number font
+                        title={'text': "QUALITY", 'font': {'size': 14}}, # small title font
+                        gauge={
+                            'axis': {
+                                'range': [0, 100],
+                                'tickmode': 'array',
+                                'tickvals': [10, 30, 50, 70, 90],
+                                'ticktext': ["VB", "Bad", "Norm", "Good", "Ex"], # shorter labels
+                                'tickfont': {'size': 10}
+                            },
+                            'bar': {'color': "black", 'thickness': 0.2},
+                            'steps': [
+                                {'range': [0, 20], 'color': "firebrick"},
+                                {'range': [20, 40], 'color': "orangered"},
+                                {'range': [40, 60], 'color': "gold"},
+                                {'range': [60, 80], 'color': "yellowgreen"},
+                                {'range': [80, 100], 'color': "green"}
+                            ],
+                            'threshold': {
+                                'line': {'color': "black", 'width': 2},
+                                'thickness': 0.75,
+                                'value': percentage
                             }
-                        )
+                        }
                     )
+                )
 
-                    # Compact chart size
-                    fig.update_layout(
-                        autosize=False,
-                        width=250,   # smaller width
-                        height=200,  # smaller height
-                        margin=dict(l=10, r=10, t=30, b=10)
-                    )
+                # Compact chart size
+                fig.update_layout(
+                    autosize=False,
+                    width=250,   # smaller width
+                    height=200,  # smaller height
+                    margin=dict(l=10, r=10, t=30, b=10)
+                )
 
-                    st.plotly_chart(fig, use_container_width=False)
-                else:
-                    st.warning("No rating found in text.")
-                result = str(resp.text)
-                lines = result.splitlines()
-                reason = '\n'.join(lines[2:])
-                st.text_area("Reason", value=reason, height=300, key="gemini_output")
-            except Exception as e:
-                st.error(f"Error calling Gemini API: {str(e)}")
+                st.plotly_chart(fig, use_container_width=False)
+            else:
+                st.warning("No rating found in text.")
+            result = str(resp.text)
+            lines = result.splitlines()
+            reason = '\n'.join(lines[2:])
+            st.text_area("Reason", value=reason, height=300, key="gemini_output")
+        except Exception as e:
+            st.error(f"Error calling Gemini API: {str(e)}")

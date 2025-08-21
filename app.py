@@ -172,7 +172,7 @@ left, col1, col2, right = st.columns([1, 2, 2, 1])
 with col1:
     evaluate_btn = st.button("Evaluate", type="primary", use_container_width=True)
 with col2:
-    clear_btn = st.button("Clear", type="primary", use_container_width=True, on_click=clear_text_areas)
+    clear_btn = st.button("Clear", type="secondary", use_container_width=True, on_click=clear_text_areas)
 
 if evaluate_btn:
     if not prompt.strip():

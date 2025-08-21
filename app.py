@@ -187,11 +187,8 @@ if evaluate_btn:
             response=response if response.strip() else None
         )
         
-        # Results section
-        st.markdown("<h1 style='text-align: center; font-size: 20px;'> Results </h1>", unsafe_allow_html=True)
-        
         # Tabs for different outputs
-        tab1, tab2 = st.tabs(["Template Output", "Gemini Output"])
+        tab1, tab2 = st.tabs(["Template Output", "Results"])
         
         with tab1:
             st.text_area("Generated Template", value=contents, height=300, key="template_output")
@@ -202,9 +199,9 @@ if evaluate_btn:
                     model="gemini-2.5-flash",
                     contents=contents
                 )
-                st.text_area("Gemini Output", value=resp.text, height=300, key="gemini_output")
+                st.text_area("Results", value=resp.text, height=300, key="Results")
                 # --- Extract rating using regex ---
-                match = re.search(r"Rating:\*\*\s*(\d+)/(\d+)", resp.text)
+                match = re.search(r"Rating:\s*(\d+)/(\d+)", resp.text)
                 if match:
                     score = int(match.group(1))
                     total = int(match.group(2))
@@ -219,10 +216,10 @@ if evaluate_btn:
                         color = "red"
 
                     # --- Display rating and meter ---
-                    st.markdown(f"### Suitability Score: **{score}/{total}**")
+                    st.markdown(f"##### Suitability Score: **{score}/{total}**")
                     st.markdown(
                         f"""
-                        <div style="background-color: lightgray; border-radius: 8px; width: 100%; height: 25px;">
+                        <div style="background-color: lightgray; border-radius: 8px; width: 100%; height: 15px;">
                             <div style="width: {rating*100}%; 
                                         background-color: {color}; 
                                         height: 100%; 
@@ -234,6 +231,9 @@ if evaluate_btn:
                     )
                 else:
                     st.warning("No rating found in text.")
-                # st.text_area("Gemini Output", value=resp.text, height=300, key="gemini_output")
+                result = str(resp.text)
+                lines = result.splitlines()
+                reason = '\n'.join(lines[2:])
+                st.text_area("Reason", value=reason, height=300, key="gemini_output")
             except Exception as e:
                 st.error(f"Error calling Gemini API: {str(e)}")

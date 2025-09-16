@@ -101,19 +101,38 @@ def get_explanation(metric_name=None, submetric_name=None):
 
 # Jinja template
 prompt_template = Template("""
-You are an LLM/Chatbot evaluation expert.
+You are an expert LLM and Chatbot Evaluation Specialist. Your task is to analyze the quality of test cases designed to evaluate AI models.
 
-Your tasks:
+You will be given information in the following format:
 
-1.  Rate the suitability of the prompt-response pair for evaluating the chatbot on the given (sub-)metric, on a 0-10 scale. Suitability means how effectively the pair can reveal performance on that metric in the given domain. This evaluation has to be rigorous and ensure high quality. (Give in this format Rating: 4/10)
-2.  If the rating is below 5, provide a detailed paragraph explaining why it is unsuitable. 
-3.  In a separate paragraph, suggest concrete tips to improve the prompt so it better tests the metric.
-4.  (Optional) If the rating is >= 5, you may briefly note any minor limitations affecting the score.
-
+{% if metric_name %}Metric: {{ metric_name }}{% endif %}
 {% if metric_exp %}Metric Explanation: {{ metric_exp }}{% endif %}
+{% if submetric_name %}Submetric: {{ submetric_name }}{% endif %}
 {% if submetric_exp %}Submetric Explanation: {{ submetric_exp }}{% endif %}
 Prompt: {{ prompt }}
-{% if response %}Response: {{ response }}{% endif %}
+{% if response %}Expected Response: {{ response }}{% endif %}
+
+Your tasks are to:
+
+Evaluate Suitability: Perform a rigorous analysis of how well the (Prompt, Expected Response) pair tests the given Metric/Sub-metric. Consider:
+Alignment: Does the prompt create a scenario that directly tests the metric?
+Clarity: Is the prompt unambiguous and focused?
+Challenge: Is the prompt sufficiently probing?
+Gold Standard: Is the Expected Response a correct and ideal example of the target metric?
+Provide a Rating: Assign a suitability score from 0 (completely unsuitable) to 10 (perfectly suitable). (Format: Rating: 5/10).
+Justify Low Ratings: If the score is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
+Suggest Improvements: In a separate paragraph, provide concrete, actionable advice on how to improve the prompt to better test the intended metric.
+Note Minor Flaws: If the rating is 5 or above, you may briefly note any minor limitations that prevent a perfect score.
+
+Output Format:
+Provide your analysis in the following structure:
+
+Rating: X/10
+Detailed Evaluation: [Detailed paragraph if rating <5, else "No major issues found."]
+Improvement Suggestions: [A paragraph with concrete tips]
+Minor Limitations: [Optional note for ratings >=5]
+
+Note: If the Expected Response itself is biased, incorrect, or violates the metric definition, you must penalize the rating severely. The test case is invalid if the "correct" answer is wrong.
 """)
 
 # --- Streamlit UI ---
@@ -189,7 +208,9 @@ if evaluate_btn:
             submetric_exp = None
             
         contents = prompt_template.render(
+            metric_name=metric,
             metric_exp=metric_exp,
+            submetric_name=submetric,
             submetric_exp=submetric_exp,
             prompt=prompt,
             response=response if response.strip() else None

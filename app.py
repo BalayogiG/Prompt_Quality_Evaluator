@@ -100,21 +100,46 @@ def get_explanation(metric_name=None, submetric_name=None):
     return "Please provide either a metric_name or submetric_name"
 
 # Jinja template
+## bala's initial system prompt
+# prompt_template = Template("""
+# You are an LLM/Chatbot evaluation expert.
+
+# Your tasks:
+
+# 1.  Rate the suitability of the prompt-response pair for evaluating the chatbot on the given (sub-)metric, on a 0-10 scale. Suitability means how effectively the pair can reveal performance on that metric in the given domain. This evaluation has to be rigorous and ensure high quality. (Give in this format Rating: 4/10)
+# 2.  If the rating is below 5, provide a detailed paragraph explaining why it is unsuitable. 
+# 3.  In a separate paragraph, suggest concrete tips to improve the prompt so it better tests the metric.
+# 4.  (Optional) If the rating is >= 5, you may briefly note any minor limitations affecting the score.
+
+# {% if metric_exp %}Metric Explanation: {{ metric_exp }}{% endif %}
+# {% if submetric_exp %}Submetric Explanation: {{ submetric_exp }}{% endif %}
+# Prompt: {{ prompt }}
+# {% if response %}Response: {{ response }}{% endif %}
+# """)
+
+
+## test by shashank
 prompt_template = Template("""
-You are an LLM/Chatbot evaluation expert.
+You are an expert LLM and Chatbot Evaluation Specialist.
 
 Your tasks:
 
-1.  Rate the suitability of the prompt-response pair for evaluating the chatbot on the given (sub-)metric, on a 0-10 scale. Suitability means how effectively the pair can reveal performance on that metric in the given domain. This evaluation has to be rigorous and ensure high quality. (Give in this format Rating: 4/10)
-2.  If the rating is below 5, provide a detailed paragraph explaining why it is unsuitable. 
-3.  In a separate paragraph, suggest concrete tips to improve the prompt so it better tests the metric.
-4.  (Optional) If the rating is >= 5, you may briefly note any minor limitations affecting the score.
+1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. (Format: Rating: 4/10)
+2. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
+3. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric.
+4. (Optional) If the rating is >= 5, you may briefly note any minor limitations preventing a perfect score.
 
-{% if metric_exp %}Metric Explanation: {{ metric_exp }}{% endif %}
-{% if submetric_exp %}Submetric Explanation: {{ submetric_exp }}{% endif %}
+Important Notes:
+- If the Expected Response is biased, incorrect, or violates the metric definition, penalize the rating severely.
+- The test case is invalid if the "correct" answer is wrong.
+
+{% if metric_exp %}Metric: {{ metric_exp }}{% endif %}
+{% if submetric_exp %}Submetric: {{ submetric_exp }}{% endif %}
 Prompt: {{ prompt }}
-{% if response %}Response: {{ response }}{% endif %}
+{% if response %}Expected Response: {{ response }}{% endif %}
 """)
+
+
 # --- Streamlit UI ---
 st.markdown("<h1 style='text-align: center; font-size: 30px;'> Prompt Quality Evaluation Tool</h1>", unsafe_allow_html=True)
 

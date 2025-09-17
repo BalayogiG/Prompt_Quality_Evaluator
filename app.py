@@ -5,6 +5,7 @@ from google import genai
 from jinja2 import Template
 import re
 import plotly.graph_objects as go
+from google.genai import types
 
 # Load environment variables
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -224,7 +225,12 @@ if evaluate_btn:
         try:
             resp = client.models.generate_content(
                 model="gemini-2.5-flash",
-                contents=contents
+                contents=contents,
+                config=types.GenerateContentConfig(                    
+                    top_p=0.95,
+                    top_k=30,                    
+                    temperature=0.3,
+                ),
             )
             # --- Extract rating using regex ---
             match = re.search(r"Rating:\s*(\d+)/(\d+)", resp.text)

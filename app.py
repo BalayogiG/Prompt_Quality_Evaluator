@@ -229,7 +229,7 @@ if evaluate_btn:
                 config=types.GenerateContentConfig(                    
                     top_p=0.95,
                     top_k=30,                    
-                    temperature=0.3,
+                    temperature=0.0,
                 ),
             )
             # --- Extract rating using regex ---

@@ -227,9 +227,9 @@ if evaluate_btn:
                 model="gemini-2.5-flash",
                 contents=contents,
                 config=types.GenerateContentConfig(                    
-                    top_p=0.95,
+                    top_p=0.6,
                     top_k=30,                    
-                    temperature=0.0,
+                    temperature=0.3,
                 ),
             )
             # --- Extract rating using regex ---

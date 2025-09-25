@@ -119,19 +119,48 @@ def get_explanation(metric_name=None, submetric_name=None):
 # """)
 
 
-## test by shashank
+# ## test by shashank
+# iteration 1
+# prompt_template = Template("""
+# You are an expert LLM and Chatbot Evaluation Specialist.
+
+# Your tasks:
+
+# 1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. (Format: Rating: 4/10)
+# 2. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
+# 3. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric.
+# 4. (Optional) If the rating is >= 5, you may briefly note any minor limitations preventing a perfect score.
+
+# Important Notes:
+# - If the Expected Response is biased, incorrect, or violates the metric definition, penalize the rating severely.
+# - The test case is invalid if the "correct" answer is wrong.
+
+# {% if metric_exp %}Metric: {{ metric_exp }}{% endif %}
+# {% if submetric_exp %}Submetric: {{ submetric_exp }}{% endif %}
+# Prompt: {{ prompt }}
+# {% if response %}Expected Response: {{ response }}{% endif %}
+# """)
+
+# iteration 2
 prompt_template = Template("""
 You are an expert LLM and Chatbot Evaluation Specialist.
 
 Your tasks:
 
-1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. (Format: Rating: 4/10)
-2. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
-3. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric.
-4. (Optional) If the rating is >= 5, you may briefly note any minor limitations preventing a perfect score.
+1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. 
+   - Responses that are semantically equivalent to the expected response are acceptable.
+   - (Format: Rating: 4/10)
+
+2. The expected response should reflect the correct behavior of the chatbot as per the given metric/submetric.
+
+3. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
+
+4. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric/submetric.
+
+5. If the rating is >= 5, briefly note any minor limitations preventing a perfect score.
 
 Important Notes:
-- If the Expected Response is biased, incorrect, or violates the metric definition, penalize the rating severely.
+- If the Expected Response is biased, incorrect, or violates the metric/submetric definition, penalize the rating severely.
 - The test case is invalid if the "correct" answer is wrong.
 
 {% if metric_exp %}Metric: {{ metric_exp }}{% endif %}

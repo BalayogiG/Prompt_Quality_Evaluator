@@ -169,12 +169,12 @@ class PromptEvaluator:
         Expected Bot → {{ turn3.response }}
         """
     
-    @retry(
-        wait=wait_exponential(multiplier=1, min=2, max=60),
-        stop=stop_after_attempt(6),
-        retry=retry_if_exception_type(Exception),
-        before_sleep=lambda rs: st.warning(f"Retrying... attempt {rs.attempt_number}")
-    )
+    # @retry(
+    #     wait=wait_exponential(multiplier=1, min=2, max=60),
+    #     stop=stop_after_attempt(6),
+    #     retry=retry_if_exception_type(Exception),
+    #     before_sleep=lambda rs: st.warning(f"Retrying... attempt {rs.attempt_number}")
+    # )
     async def evaluate_async(self, content: str) -> str:
         """Async Gemini evaluation with retry logic."""
         loop = asyncio.get_event_loop()
@@ -297,7 +297,7 @@ with col1:
                 
                 # Extract and display rating
                 score = evaluator._extract_rating(result)
-                print(score)
+                # print(score)
                 if score:
                     evaluator._display_gauge(score)
                 

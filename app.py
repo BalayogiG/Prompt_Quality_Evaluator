@@ -1,4 +1,5 @@
 import os
+import random
 import pandas as pd
 import streamlit as st
 from google import genai
@@ -6,6 +7,7 @@ from jinja2 import Template
 import re
 import plotly.graph_objects as go
 from google.genai import types
+import time
 
 # Load environment variables
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -96,13 +98,9 @@ Your tasks:
 1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. 
    - Responses that are semantically equivalent to the expected response are acceptable.
    - (Format: Rating: 4/10)
-
 2. The expected response should reflect the correct behavior of the chatbot as per the given metric/submetric.
-
 3. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
-
 4. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric/submetric.
-
 5. If the rating is >= 5, briefly note any minor limitations preventing a perfect score.
 
 Important Notes:
@@ -130,13 +128,9 @@ Your tasks:
 1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. 
    - Responses that are semantically equivalent to the expected response are acceptable.
    - (Format: Rating: 4/10)
-
 2. The expected response should reflect the correct behavior of the chatbot as per the given metric/submetric.
-
 3. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
-
 4. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric/submetric.
-
 5. If the rating is >= 5, briefly note any minor limitations preventing a perfect score.
 
 Important Notes:
@@ -167,13 +161,9 @@ Your tasks:
 1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. 
    - Responses that are semantically equivalent to the expected response are acceptable.
    - (Format: Rating: 4/10)
-
 2. The expected response should reflect the correct behavior of the chatbot as per the given metric/submetric.
-
 3. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
-
 4. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric/submetric.
-
 5. If the rating is >= 5, briefly note any minor limitations preventing a perfect score.
 
 Important Notes:
@@ -291,6 +281,7 @@ if evaluate_btn:
     )
 
     try:
+        time.sleep(5 + random.uniform(1,5))  # slight delay to ensure UI updates before API call
         resp = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=content,
@@ -300,6 +291,7 @@ if evaluate_btn:
                 top_k=30,
             ),
         )
+        time.sleep(5)  # slight delay to ensure UI updates before rendering results
 
         # Extract rating
         match = re.search(r"Rating:\s*(\d+)/(\d+)", resp.text)

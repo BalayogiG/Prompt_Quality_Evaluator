@@ -7,15 +7,45 @@ from jinja2 import Template
 import re
 import plotly.graph_objects as go
 from google.genai import types
-import time
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type 
 
 # Load environment variables
+# Assumes 'GEMINI_API_KEY' is correctly configured in st.secrets
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
 # # Setup Gemini client
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 st.set_page_config(layout="wide")
+
+# --- Function to handle throttling with Exponential Backoff ---
+@retry(
+    # Wait exponentially between retries (e.g., 2s, 4s, 8s, 16s, 32s)
+    # with min and max limits. A random jitter is automatically added
+    # by wait_exponential for better load distribution.
+    wait=wait_exponential(multiplier=1, min=2, max=60), 
+    # Stop trying after a total of 6 attempts (initial call + 5 retries)
+    stop=stop_after_attempt(6),
+    # Retry on all exceptions (for simplicity, but ideally you would 
+    # specifically target QuotaExceededError or other API-related errors)
+    retry=retry_if_exception_type(Exception),
+    # Log the attempts
+    before_sleep=lambda retry_state: print(f"Retrying API call: attempt {retry_state.attempt_number}...")
+)
+def call_gemini_api_with_retry(content):
+    """Encapsulates the Gemini API call with exponential backoff."""
+    resp = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=content,
+        config=types.GenerateContentConfig(
+            temperature=0.3,
+            top_p=0.6,
+            top_k=30,
+        ),
+    )
+    return resp
+# --- End of Retry Function ---
+
 
 def clear_text_areas():
     for key in st.session_state.keys():
@@ -87,7 +117,7 @@ def get_explanation(metric_name=None, submetric_name=None):
     return "Please provide either a metric_name or submetric_name"
 
 ###########################################
-# THREE TEMPLATES (Option A)
+# PROMPT TEMPLATES
 ###########################################
 
 single_turn_template = Template("""
@@ -281,17 +311,8 @@ if evaluate_btn:
     )
 
     try:
-        time.sleep(5 + random.uniform(1,5))  # slight delay to ensure UI updates before API call
-        resp = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=content,
-            config=types.GenerateContentConfig(
-                temperature=0.3,
-                top_p=0.6,
-                top_k=30,
-            ),
-        )
-        time.sleep(5)  # slight delay to ensure UI updates before rendering results
+        # Call the new retry-enabled function
+        resp = call_gemini_api_with_retry(content)
 
         # Extract rating
         match = re.search(r"Rating:\s*(\d+)/(\d+)", resp.text)
@@ -299,18 +320,20 @@ if evaluate_btn:
             score = int(match.group(1))
             total = int(match.group(2))
             percentage = (score / total) * 100
+            
+            # --- Gauge Chart Creation ---
             fig = go.Figure(
                 go.Indicator(
                     mode="gauge+number",
                     value=percentage,
-                    number={'suffix': "%", 'font': {'size': 18}},   # very small number font
-                    title={'text': "QUALITY", 'font': {'size': 14}}, # small title font
+                    number={'suffix': "%", 'font': {'size': 18}},
+                    title={'text': "QUALITY", 'font': {'size': 14}},
                     gauge={
                         'axis': {
                             'range': [0, 100],
                             'tickmode': 'array',
                             'tickvals': [10, 30, 50, 70, 90],
-                            'ticktext': ["VB", "Bad", "Norm", "Good", "Ex"], # shorter labels
+                            'ticktext': ["VB", "Bad", "Norm", "Good", "Ex"],
                             'tickfont': {'size': 10}
                         },
                         'bar': {'color': "black", 'thickness': 0.2},
@@ -333,17 +356,20 @@ if evaluate_btn:
             # Compact chart size
             fig.update_layout(
                 autosize=False,
-                width=250,   # smaller width
-                height=200,  # smaller height
+                width=250,
+                height=200,
                 margin=dict(l=10, r=10, t=30, b=10)
             )
 
             st.plotly_chart(fig, use_container_width=False)
         else:
             st.warning("No rating found in text.")
+            
         result = str(resp.text)
         lines = result.splitlines()
         reason = '\n'.join(lines[2:])
         st.text_area("Reason", value=reason, height=300, key="gemini_output")
+        
     except Exception as e:
-        st.error(f"Error calling Gemini API: {str(e)}")
+        # This will only be reached after the 6th failed attempt
+        st.error(f"Error calling Gemini API after multiple retries: {str(e)}. The service is under too much load or the quota has been persistently exceeded.")

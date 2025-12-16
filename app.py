@@ -1,265 +1,272 @@
 import os
-import random
-import pandas as pd
 import streamlit as st
+import pandas as pd
 from google import genai
+from google.genai import types
 from jinja2 import Template
 import re
 import plotly.graph_objects as go
-from google.genai import types
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type 
+from typing import Dict, List, Optional, Any
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+import asyncio
 
-# Load environment variables
-# Assumes 'GEMINI_API_KEY' is correctly configured in st.secrets
+# Configuration
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-
-# # Setup Gemini client
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="Prompt Quality Evaluator")
 
-# --- Function to handle throttling with Exponential Backoff ---
-@retry(
-    # Wait exponentially between retries (e.g., 2s, 4s, 8s, 16s, 32s)
-    # with min and max limits. A random jitter is automatically added
-    # by wait_exponential for better load distribution.
-    wait=wait_exponential(multiplier=1, min=2, max=60), 
-    # Stop trying after a total of 6 attempts (initial call + 5 retries)
-    stop=stop_after_attempt(6),
-    # Retry on all exceptions (for simplicity, but ideally you would 
-    # specifically target QuotaExceededError or other API-related errors)
-    retry=retry_if_exception_type(Exception),
-    # Log the attempts
-    before_sleep=lambda retry_state: print(f"Retrying API call: attempt {retry_state.attempt_number}...")
-)
-def call_gemini_api_with_retry(content):
-    """Encapsulates the Gemini API call with exponential backoff."""
-    resp = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=content,
-        config=types.GenerateContentConfig(
-            temperature=0.3,
-            top_p=0.6,
-            top_k=30,
-        ),
-    )
-    return resp
-# --- End of Retry Function ---
-
-
-def clear_text_areas():
-    for key in st.session_state.keys():
-        if key.startswith("prompt_") or key.startswith("response_"):
-            st.session_state[key] = ""
-
-###########################################
-# LOAD DATA
-###########################################
-
-@st.cache_data
-def load_data():
-    try:
-        file_path = "metric_and_submetric.xlsx"
-        try:
-            df = pd.read_excel(file_path, engine='openpyxl')
-        except:
-            df = pd.read_excel(file_path)
-
-        df = df.fillna(method='ffill')
-        df = df.dropna(how='all')
-
-        if 'SUBMETRIC_NAME' in df.columns:
-            df = df.dropna(subset=["SUBMETRIC_NAME"])
+class PromptEvaluator:
+    def __init__(self):
+        self.df = self._load_data()
+        self.metric_to_submetrics = self._build_metric_mapping()
+        self.templates = self._load_templates()
+    
+    def _load_data(self) -> pd.DataFrame:
+        """Load and clean Excel data with caching."""
+        @st.cache_data
+        def load_excel():
+            try:
+                df = pd.read_excel("metric_and_submetric.xlsx", engine='openpyxl')
+                df = df.fillna(method='ffill').dropna(how='all')
+                if 'SUBMETRIC_NAME' in df.columns:
+                    df = df.dropna(subset=["SUBMETRIC_NAME"])
+                return df
+            except Exception as e:
+                st.error(f"Error loading data: {e}")
+                return pd.DataFrame()
+        
+        df = load_excel()
+        if df.empty:
+            st.stop()
         return df
+    
+    def _build_metric_mapping(self) -> Dict[str, List[str]]:
+        """Create metric to submetrics mapping."""
+        mapping = {}
+        for _, row in self.df.iterrows():
+            metric = str(row["METRIC_NAME"]).strip()
+            submetric = str(row["SUBMETRIC_NAME"]).strip()
+            mapping.setdefault(metric, []).append(submetric)
+        return mapping
+    
+    def _load_templates(self) -> Dict[str, Template]:
+        """Load all prompt templates."""
+        templates = {
+            "single": Template(self._single_turn_template()),
+            "two": Template(self._two_turn_template()),
+            "three": Template(self._three_turn_template())
+        }
+        return templates
+    
+    def get_explanation(self, metric_name: Optional[str] = None, 
+                       submetric_name: Optional[str] = None) -> str:
+        """Get explanation for metric or submetric."""
+        if metric_name:
+            row = self.df[self.df['METRIC_NAME'].str.strip() == metric_name.strip()]
+            return str(row.iloc[0].get("METRIC_EXPLAINATION", "")) if not row.empty else "No explanation"
+        
+        if submetric_name:
+            row = self.df[self.df['SUBMETRIC_NAME'].str.strip() == submetric_name.strip()]
+            return str(row.iloc[0].get("SUBMETRIC_EXPLAINATION", "")) if not row.empty else "No explanation"
+        
+        return "Please provide metric or submetric"
+    
+    @staticmethod
+    def _single_turn_template() -> str:
+        return """You are an expert LLM and Chatbot Evaluation Specialist.
+        Your tasks:
 
-    except FileNotFoundError:
-        st.error("Excel file 'metric_and_submetric.xlsx' not found!")
-        return pd.DataFrame()
+        1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. 
+        - Responses that are semantically equivalent to the expected response are acceptable.
+        - (Format: Rating: 4/10)
+        2. The expected response should reflect the correct behavior of the chatbot as per the given metric/submetric.
+        3. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
+        4. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric/submetric.
+        5. If the rating is >= 5, briefly note any minor limitations preventing a perfect score.
 
-    except Exception as e:
-        st.error(f"Error loading Excel file: {str(e)}")
-        return pd.DataFrame()
+        Important Notes:
+        - If the Expected Response is biased, incorrect, or violates the metric/submetric definition, penalize the rating severely.
+        - The test case is invalid if the "correct" answer is wrong.
 
-df = load_data()
-if df.empty:
-    st.stop()
+        {% if metric_exp %}Metric: {{ metric_exp }}{% endif %}
+        {% if submetric_exp %}Submetric: {{ submetric_exp }}{% endif %}
+        Prompt: {{ prompt }}
+        {% if response %}Expected Response: {{ response }}{% endif %}
 
-###########################################
-# METRIC → SUBMETRIC MAPPING
-###########################################
+        Conversation:
+        Turn 1:
+        User → {{ turn1.prompt }}
+        Expected Bot → {{ turn1.response }}
+    """
 
-metric_to_submetrics = {}
-for _, row in df.iterrows():
-    metric_name = str(row["METRIC_NAME"]).strip()
-    submetric_name = str(row["SUBMETRIC_NAME"]).strip()
-    metric_to_submetrics.setdefault(metric_name, []).append(submetric_name)
+    @staticmethod
+    def _two_turn_template() -> str:
+        return """
+        You are an expert LLM and Chatbot Evaluation Specialist.
+        Your tasks:
 
-###########################################
-# EXPLANATION FETCHER
-###########################################
+        1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. 
+        - Responses that are semantically equivalent to the expected response are acceptable.
+        - (Format: Rating: 4/10)
+        2. The expected response should reflect the correct behavior of the chatbot as per the given metric/submetric.
+        3. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
+        4. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric/submetric.
+        5. If the rating is >= 5, briefly note any minor limitations preventing a perfect score.
 
-def get_explanation(metric_name=None, submetric_name=None):
+        Important Notes:
+        - If the Expected Response is biased, incorrect, or violates the metric/submetric definition, penalize the rating severely.
+        - The test case is invalid if the "correct" answer is wrong.
 
-    if metric_name:
-        row = df[df['METRIC_NAME'].str.strip() == metric_name.strip()]
-        if not row.empty:
-            explanation = row.iloc[0].get("METRIC_EXPLAINATION", "")
-            return str(explanation).strip() if explanation else "No explanation found"
-        return "Metric name not found"
+        {% if metric_exp %}Metric: {{ metric_exp }}{% endif %}
+        {% if submetric_exp %}Submetric: {{ submetric_exp }}{% endif %}
+        Prompt: {{ prompt }}
+        {% if response %}Expected Response: {{ response }}{% endif %}
 
-    if submetric_name:
-        row = df[df['SUBMETRIC_NAME'].str.strip() == submetric_name.strip()]
-        if not row.empty:
-            explanation = row.iloc[0].get("SUBMETRIC_EXPLAINATION", "")
-            return str(explanation).strip() if explanation else "No explanation found"
-        return "Submetric name not found"
+        Conversation:
+        Turn 1:
+        User → {{ turn1.prompt }}
+        Expected Bot → {{ turn1.response }}
 
-    return "Please provide either a metric_name or submetric_name"
+        Turn 2:
+        User → {{ turn2.prompt }}
+        Expected Bot → {{ turn2.response }}
+    """
+    
+    @staticmethod
+    def _three_turn_template() -> str:
+        return """
+        You are an expert LLM and Chatbot Evaluation Specialist.
+        Your tasks:
+        1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. 
+        - Responses that are semantically equivalent to the expected response are acceptable.
+        - (Format: Rating: 4/10)
+        2. The expected response should reflect the correct behavior of the chatbot as per the given metric/submetric.
+        3. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
+        4. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric/submetric.
+        5. If the rating is >= 5, briefly note any minor limitations preventing a perfect score.
 
-###########################################
-# PROMPT TEMPLATES
-###########################################
+        Important Notes:
+        - If the Expected Response is biased, incorrect, or violates the metric/submetric definition, penalize the rating severely.
+        - The test case is invalid if the "correct" answer is wrong.
 
-single_turn_template = Template("""
-You are an expert LLM and Chatbot Evaluation Specialist.
+        {% if metric_exp %}Metric: {{ metric_exp }}{% endif %}
+        {% if submetric_exp %}Submetric: {{ submetric_exp }}{% endif %}
+        Prompt: {{ prompt }}
+        {% if response %}Expected Response: {{ response }}{% endif %}
 
-Your tasks:
+        Conversation:
+        Turn 1:
+        User → {{ turn1.prompt }}
+        Expected Bot → {{ turn1.response }}
 
-1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. 
-   - Responses that are semantically equivalent to the expected response are acceptable.
-   - (Format: Rating: 4/10)
-2. The expected response should reflect the correct behavior of the chatbot as per the given metric/submetric.
-3. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
-4. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric/submetric.
-5. If the rating is >= 5, briefly note any minor limitations preventing a perfect score.
+        Turn 2:
+        User → {{ turn2.prompt }}
+        Expected Bot → {{ turn2.response }}
 
-Important Notes:
-- If the Expected Response is biased, incorrect, or violates the metric/submetric definition, penalize the rating severely.
-- The test case is invalid if the "correct" answer is wrong.
+        Turn 3:
+        User → {{ turn3.prompt }}
+        Expected Bot → {{ turn3.response }}
+        """
+    
+    @retry(
+        wait=wait_exponential(multiplier=1, min=2, max=60),
+        stop=stop_after_attempt(6),
+        retry=retry_if_exception_type(Exception),
+        before_sleep=lambda rs: st.warning(f"Retrying... attempt {rs.attempt_number}")
+    )
+    async def evaluate_async(self, content: str) -> str:
+        """Async Gemini evaluation with retry logic."""
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, 
+            lambda: client.models.generate_content(  # or whatever the correct client method is
+                model="gemini-2.5-flash",
+                contents=content,
+                config=types.GenerateContentConfig(
+                    temperature=0.3,
+                    top_p=0.6,
+                    top_k=30,
+                )
+            )
+        )
+        
+        # Extract text from the nested response structure
+        try:
+            text = response.candidates[0].content.parts[0].text
+            return text
+        except (AttributeError, IndexError, KeyError) as e:
+            st.error(f"Failed to extract text from response: {e}")
+            st.write("Raw response structure:", response)
+            return f"Extraction failed. Raw response logged above. Error: {e}"
+        
+    # Helper methods in class
+    def _extract_rating(self, text: str) -> Optional[float]:
+        """Extract rating from Gemini response."""
+        # More flexible regex to handle extra whitespace/newlines
+        match = re.search(r"Rating[:\s]*(\d+)[:/\s]*(\d+)", text, re.IGNORECASE)
+        return (int(match.group(1)) / int(match.group(2))) * 100 if match else None
 
-{% if metric_exp %}Metric: {{ metric_exp }}{% endif %}
-{% if submetric_exp %}Submetric: {{ submetric_exp }}{% endif %}
-Prompt: {{ prompt }}
-{% if response %}Expected Response: {{ response }}{% endif %}
+    def _display_gauge(self, percentage: float):
+        """Display quality gauge chart."""
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=percentage,
+            number={'suffix': "%"},
+            gauge={
+                'axis': {'range': [0, 100], 'tickvals': [20,40,60,80], 'ticktext': ["Poor", "Fair", "Good", "Excellent"]},
+                'bar': {'color': "black"},
+                'steps': [
+                    {'range': [0, 40], 'color': "red"},
+                    {'range': [40, 70], 'color': "yellow"},
+                    {'range': [70, 100], 'color': "green"}
+                ],
+                'threshold': {'line': {'color': "black"}, 'value': percentage}
+            }
+        ))
+        fig.update_layout(width=300, height=250, margin=dict(l=10, r=10, t=30, b=10))
+        st.plotly_chart(fig, width="content")
 
-Conversation:
-Turn 1:
-  User → {{ turn1.prompt }}
-  Expected Bot → {{ turn1.response }}
+def clear_inputs():
+    """Clear all prompt/response text areas."""
+    for i in range(3):  # Max 3 turns
+        if f"prompt_{i}" in st.session_state:
+            st.session_state[f"prompt_{i}"] = ""
+        if f"response_{i}" in st.session_state:
+            st.session_state[f"response_{i}"] = ""
 
-""")
+# Initialize app
+evaluator = PromptEvaluator()
 
+# UI Layout
+st.markdown("<h1 style='text-align: center;'>Prompt Quality Evaluation Tool</h1>", unsafe_allow_html=True)
 
-two_turn_template = Template("""
-You are an expert LLM and Chatbot Evaluation Specialist.
-
-Your tasks:
-
-1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. 
-   - Responses that are semantically equivalent to the expected response are acceptable.
-   - (Format: Rating: 4/10)
-2. The expected response should reflect the correct behavior of the chatbot as per the given metric/submetric.
-3. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
-4. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric/submetric.
-5. If the rating is >= 5, briefly note any minor limitations preventing a perfect score.
-
-Important Notes:
-- If the Expected Response is biased, incorrect, or violates the metric/submetric definition, penalize the rating severely.
-- The test case is invalid if the "correct" answer is wrong.
-
-{% if metric_exp %}Metric: {{ metric_exp }}{% endif %}
-{% if submetric_exp %}Submetric: {{ submetric_exp }}{% endif %}
-Prompt: {{ prompt }}
-{% if response %}Expected Response: {{ response }}{% endif %}
-
-Conversation:
-Turn 1:
-  User → {{ turn1.prompt }}
-  Expected Bot → {{ turn1.response }}
-
-Turn 2:
-  User → {{ turn2.prompt }}
-  Expected Bot → {{ turn2.response }}
-""")
-
-
-three_turn_template = Template("""
-You are an expert LLM and Chatbot Evaluation Specialist.
-
-Your tasks:
-
-1. Evaluate Suitability: Rate how well the (Prompt, Expected Response) pair tests the given Metric/Submetric. Suitability means the pair should directly align with the metric definition, be unambiguous, and sufficiently probing. 
-   - Responses that are semantically equivalent to the expected response are acceptable.
-   - (Format: Rating: 4/10)
-2. The expected response should reflect the correct behavior of the chatbot as per the given metric/submetric.
-3. If the rating is below 5, provide a detailed paragraph explaining the critical flaws that make the test case unsuitable.
-4. In a separate paragraph, suggest concrete, actionable improvements to the prompt or expected response so it better tests the intended metric/submetric.
-5. If the rating is >= 5, briefly note any minor limitations preventing a perfect score.
-
-Important Notes:
-- If the Expected Response is biased, incorrect, or violates the metric/submetric definition, penalize the rating severely.
-- The test case is invalid if the "correct" answer is wrong.
-
-{% if metric_exp %}Metric: {{ metric_exp }}{% endif %}
-{% if submetric_exp %}Submetric: {{ submetric_exp }}{% endif %}
-Prompt: {{ prompt }}
-{% if response %}Expected Response: {{ response }}{% endif %}
-
-Conversation:
-Turn 1:
-  User → {{ turn1.prompt }}
-  Expected Bot → {{ turn1.response }}
-
-Turn 2:
-  User → {{ turn2.prompt }}
-  Expected Bot → {{ turn2.response }}
-
-Turn 3:
-  User → {{ turn3.prompt }}
-  Expected Bot → {{ turn3.response }}
-""")
-
-
-###########################################
-# STREAMLIT UI
-###########################################
-
-st.markdown("<h1 style='text-align: center; font-size: 30px;'> Prompt Quality Evaluation Tool</h1>", unsafe_allow_html=True)
-
-# SIDEBAR
+# Sidebar Controls
 with st.sidebar:
-    st.header("Metric & Submetric Selection")
-    metric = st.selectbox("Select Metric", list(metric_to_submetrics.keys()))
-    submetric_choices = sorted(list(set(metric_to_submetrics.get(metric, []))))
-    submetric = st.selectbox("Select Submetric", [""] + submetric_choices)
-    conversation_type = st.selectbox("Conversation Type", ["Single Turn", "Two Turn", "Three Turn"], index=0)
-    turns = 1 if conversation_type == "Single Turn" else (2 if conversation_type == "Two Turn" else 3)
+    st.header("🎯 Selection")
+    metric = st.selectbox("Metric", list(evaluator.metric_to_submetrics.keys()))
+    submetrics = sorted(set(evaluator.metric_to_submetrics.get(metric, [])))
+    submetric = st.selectbox("Submetric", [""] + submetrics)
+    conv_type = st.selectbox("Turns", ["Single", "Two", "Three"], index=0)
+    turns = {"Single": 1, "Two": 2, "Three": 3}[conv_type]
 
-# Definitions
+# Definitions Display
 st.markdown("<h2 style='text-align: center;'>Definitions</h2>", unsafe_allow_html=True)
-col1, col2 = st.columns([3,3])
-
+col1, col2 = st.columns(2)
 with col1:
     if metric:
-        mexp = get_explanation(metric_name=metric)
-        st.info(f"**Metric:** {metric}")
-        st.write(mexp)
+        m_exp = evaluator.get_explanation(metric_name=metric)
+        st.info(f"**Metric: {metric}**")
+        st.write(m_exp)
 
 with col2:
     if submetric:
-        smexp = get_explanation(submetric_name=submetric)
-        st.info(f"**Submetric:** {submetric}")
-        st.write(smexp)
+        s_exp = evaluator.get_explanation(submetric_name=submetric)
+        st.info(f"**Submetric: {submetric}**")
+        st.write(s_exp)
 
-###########################################
-# Conversation Type Selector
-###########################################
-
+# Conversation Input
 st.markdown("<h2 style='text-align: center;'>Conversation Input</h2>", unsafe_allow_html=True)
-
-###########################################
-# Input Fields for Turns
-###########################################
 
 inputs = []
 for t in range(turns):
@@ -271,105 +278,33 @@ for t in range(turns):
         r = st.text_area(f"Expected Response (Turn {t+1})", key=f"response_{t+1}", height=130)
     inputs.append({"prompt": p, "response": r})
 
-###########################################
-# Buttons
-###########################################
-
-# Center the buttons like before
-left, col1, col2, right = st.columns([1, 2, 2, 1])
-
+# Action Buttons
+col1, col2 = st.columns(2)
 with col1:
-    evaluate_btn = st.button("Evaluate", type="primary", use_container_width=True)
-
-with col2:
-    clear_btn = st.button("Clear", type="secondary", use_container_width=True, on_click=clear_text_areas)
-
-###########################################
-# EVALUATION
-###########################################
-
-if evaluate_btn:
-
-    metric_exp = get_explanation(metric_name=metric)
-    submetric_exp = get_explanation(submetric_name=submetric)
-
-    # Pick template
-    if conversation_type == "Single Turn":
-        template = single_turn_template
-    elif conversation_type == "Two Turn":
-        template = two_turn_template
-    else:
-        template = three_turn_template
-
-    # Render template
-    content = template.render(
-        metric_exp=metric_exp,
-        submetric_exp=submetric_exp,
-        turn1=inputs[0],
-        turn2=inputs[1] if turns >= 2 else None,
-        turn3=inputs[2] if turns == 3 else None,
-    )
-
-    try:
-        # Call the new retry-enabled function
-        resp = call_gemini_api_with_retry(content)
-
-        # Extract rating
-        match = re.search(r"Rating:\s*(\d+)/(\d+)", resp.text)
-        if match:
-            score = int(match.group(1))
-            total = int(match.group(2))
-            percentage = (score / total) * 100
-            
-            # --- Gauge Chart Creation ---
-            fig = go.Figure(
-                go.Indicator(
-                    mode="gauge+number",
-                    value=percentage,
-                    number={'suffix': "%", 'font': {'size': 18}},
-                    title={'text': "QUALITY", 'font': {'size': 14}},
-                    gauge={
-                        'axis': {
-                            'range': [0, 100],
-                            'tickmode': 'array',
-                            'tickvals': [10, 30, 50, 70, 90],
-                            'ticktext': ["VB", "Bad", "Norm", "Good", "Ex"],
-                            'tickfont': {'size': 10}
-                        },
-                        'bar': {'color': "black", 'thickness': 0.2},
-                        'steps': [
-                            {'range': [0, 20], 'color': "firebrick"},
-                            {'range': [20, 40], 'color': "orangered"},
-                            {'range': [40, 60], 'color': "gold"},
-                            {'range': [60, 80], 'color': "yellowgreen"},
-                            {'range': [80, 100], 'color': "green"}
-                        ],
-                        'threshold': {
-                            'line': {'color': "black", 'width': 2},
-                            'thickness': 0.75,
-                            'value': percentage
-                        }
-                    }
+    if st.button("Evaluate", type="primary", width="stretch"):
+        with st.spinner("Evaluating..."):
+            try:
+                # Build prompt
+                template = evaluator.templates[conv_type.lower()]
+                content = template.render(
+                    metric_exp=evaluator.get_explanation(metric_name=metric),
+                    submetric_exp=evaluator.get_explanation(submetric_name=submetric) if submetric else "",
+                    **{f"turn{j}": inputs[j-1] for j in range(1, turns+1)}
                 )
-            )
-
-            # Compact chart size
-            fig.update_layout(
-                autosize=False,
-                width=250,
-                height=200,
-                margin=dict(l=10, r=10, t=30, b=10)
-            )
-
-            st.plotly_chart(fig, use_container_width=False)
-        else:
-            st.warning("No rating found in text.")
-            
-        result = str(resp.text)
-        lines = result.splitlines()
-        reason = '\n'.join(lines[2:])
-        st.text_area("Reason", value=reason, height=300, key="gemini_output")
-        
-    except Exception as e:
-        # This will only be reached after the 6th failed attempt
-        st.error(f"Error calling Gemini API after multiple retries: {str(e)}. The service is under too much load or the quota has been persistently exceeded.")
+                
+                # Async evaluation
+                result = asyncio.run(evaluator.evaluate_async(content))
+                
+                # Extract and display rating
+                score = evaluator._extract_rating(result)
+                print(score)
+                if score:
+                    evaluator._display_gauge(score)
+                
+                # Show full response
+                st.text_area("📊 Evaluation Result", result, height=400)
+                
+            except Exception as e:
+                st.error(f"Evaluation failed: {e}")
+with col2:
+     st.button("Clear", type="secondary", on_click=clear_inputs, width="stretch")

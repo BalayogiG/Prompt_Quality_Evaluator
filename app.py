@@ -7,12 +7,27 @@ from jinja2 import Template
 import re
 import plotly.graph_objects as go
 from typing import Dict, List, Optional, Any
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
 import asyncio
+import itertools
+import threading
 
-# Configuration
-GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-client = genai.Client(api_key=GEMINI_API_KEY)
+# ------------------------------------------------------------------
+# Gemini Key Rotation Manager
+# ------------------------------------------------------------------
+class GeminiKeyManager:
+    def __init__(self, keys: List[str]):
+        if not keys:
+            raise ValueError("No Gemini API keys provided")
+        self._cycle = itertools.cycle(keys)
+        self._lock = threading.Lock()
+
+    def get_key(self) -> str:
+        with self._lock:
+            return next(self._cycle)
+
+# Load keys from Streamlit secrets
+GEMINI_API_KEYS = st.secrets["GEMINI_API_KEYS"]
+key_manager = GeminiKeyManager(GEMINI_API_KEYS)
 
 st.set_page_config(layout="wide", page_title="Prompt Quality Evaluator")
 
@@ -169,36 +184,31 @@ class PromptEvaluator:
         Expected Bot → {{ turn3.response }}
         """
     
-    # @retry(
-    #     wait=wait_exponential(multiplier=1, min=2, max=60),
-    #     stop=stop_after_attempt(6),
-    #     retry=retry_if_exception_type(Exception),
-    #     before_sleep=lambda rs: st.warning(f"Retrying... attempt {rs.attempt_number}")
-    # )
     async def evaluate_async(self, content: str) -> str:
-        """Async Gemini evaluation with retry logic."""
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, 
-            lambda: client.models.generate_content(  # or whatever the correct client method is
+
+        def _call_gemini():
+            api_key = key_manager.get_key()
+            client = genai.Client(api_key=api_key)
+
+            return client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=content,
                 config=types.GenerateContentConfig(
                     temperature=0.3,
                     top_p=0.6,
                     top_k=30,
-                )
+                ),
             )
-        )
-        
-        # Extract text from the nested response structure
+
+        response = await loop.run_in_executor(None, _call_gemini)
+
         try:
-            text = response.candidates[0].content.parts[0].text
-            return text
-        except (AttributeError, IndexError, KeyError) as e:
-            st.error(f"Failed to extract text from response: {e}")
-            st.write("Raw response structure:", response)
-            return f"Extraction failed. Raw response logged above. Error: {e}"
+            return response.candidates[0].content.parts[0].text
+        except Exception as e:
+            st.error(f"Response parsing failed: {e}")
+            st.write(response)
+            return "Failed to parse Gemini response"
         
     # Helper methods in class
     def _extract_rating(self, text: str) -> Optional[float]:
@@ -256,7 +266,7 @@ st.markdown("<h1 style='text-align: center;'>Prompt Quality Evaluation Tool</h1>
 
 # Sidebar Controls
 with st.sidebar:
-    st.header("🎯 Selection")
+    st.header("Selection")
     metric = st.selectbox("Metric", list(evaluator.metric_to_submetrics.keys()))
     submetrics = sorted(set(evaluator.metric_to_submetrics.get(metric, [])))
     submetric = st.selectbox("Submetric", [""] + submetrics)
@@ -264,7 +274,7 @@ with st.sidebar:
     turns = {"Single": 1, "Two": 2, "Three": 3}[conv_type]
 
 # Definitions Display
-st.markdown("<h2 style='text-align: center;'>📖 Definitions</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center;'>Definitions</h2>", unsafe_allow_html=True)
 col1, col2 = st.columns(2)
 with col1:
     if metric:
@@ -279,7 +289,7 @@ with col2:
         st.write(s_exp)
 
 # Conversation Input
-st.markdown("<h2 style='text-align: center;'>💬 Conversation Input</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center;'>Conversation Input</h2>", unsafe_allow_html=True)
 
 inputs = []
 for t in range(turns):
@@ -316,9 +326,9 @@ with col1:
                     evaluator._display_gauge(score)
                 
                 # Show full response
-                st.text_area("📊 Evaluation Result", result, height=400)
+                st.text_area("Evaluation Result", result, height=400)
                 
             except Exception as e:
                 st.error(f"Evaluation failed: {e}")
 with col2:
-     st.button("🗑️ Clear", type="secondary", on_click=clear_inputs, width="stretch")
+     st.button("Clear", type="secondary", on_click=clear_inputs, width="stretch")

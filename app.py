@@ -235,6 +235,19 @@ def clear_inputs():
         if f"response_{i}" in st.session_state:
             st.session_state[f"response_{i}"] = ""
 
+def normalize_turns(inputs):
+    normalized = []
+    for i, turn in enumerate(inputs, start=1):
+        response = turn["response"].strip()
+        if response == "":
+            response = "[Not evaluated for this metric]"
+        normalized.append({
+            "prompt": turn["prompt"],
+            "response": response
+        })
+    return normalized
+
+
 # Initialize app
 evaluator = PromptEvaluator()
 
@@ -251,7 +264,7 @@ with st.sidebar:
     turns = {"Single": 1, "Two": 2, "Three": 3}[conv_type]
 
 # Definitions Display
-st.markdown("<h2 style='text-align: center;'>Definitions</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center;'>📖 Definitions</h2>", unsafe_allow_html=True)
 col1, col2 = st.columns(2)
 with col1:
     if metric:
@@ -266,7 +279,7 @@ with col2:
         st.write(s_exp)
 
 # Conversation Input
-st.markdown("<h2 style='text-align: center;'>Conversation Input</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center;'>💬 Conversation Input</h2>", unsafe_allow_html=True)
 
 inputs = []
 for t in range(turns):
@@ -281,15 +294,16 @@ for t in range(turns):
 # Action Buttons
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("Evaluate", type="primary", width="stretch"):
+    if st.button("🔍 Evaluate", type="primary", width="stretch"):
         with st.spinner("Evaluating..."):
             try:
                 # Build prompt
+                normalized_inputs = normalize_turns(inputs)
                 template = evaluator.templates[conv_type.lower()]
                 content = template.render(
                     metric_exp=evaluator.get_explanation(metric_name=metric),
                     submetric_exp=evaluator.get_explanation(submetric_name=submetric) if submetric else "",
-                    **{f"turn{j}": inputs[j-1] for j in range(1, turns+1)}
+                    **{f"turn{j}": normalized_inputs[j-1] for j in range(1, turns+1)}
                 )
                 
                 # Async evaluation
@@ -297,7 +311,7 @@ with col1:
                 
                 # Extract and display rating
                 score = evaluator._extract_rating(result)
-                # print(score)
+                print(score)
                 if score:
                     evaluator._display_gauge(score)
                 
@@ -307,4 +321,4 @@ with col1:
             except Exception as e:
                 st.error(f"Evaluation failed: {e}")
 with col2:
-     st.button("Clear", type="secondary", on_click=clear_inputs, width="stretch")
+     st.button("🗑️ Clear", type="secondary", on_click=clear_inputs, width="stretch")

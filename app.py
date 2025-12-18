@@ -229,7 +229,7 @@ class PromptEvaluator:
 
 def clear_inputs():
     """Clear all prompt/response text areas."""
-    for i in range(3):  # Max 3 turns
+    for i in range(4):  # Max 3 turns
         if f"prompt_{i}" in st.session_state:
             st.session_state[f"prompt_{i}"] = ""
         if f"response_{i}" in st.session_state:

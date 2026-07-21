@@ -43,7 +43,7 @@ class PromptEvaluator:
         def load_excel():
             try:
                 df = pd.read_excel("metric_and_submetric.xlsx", engine='openpyxl')
-                df = df.fillna(method='ffill').dropna(how='all')
+                df = df.ffill().dropna(how='all')
                 if 'SUBMETRIC_NAME' in df.columns:
                     df = df.dropna(subset=["SUBMETRIC_NAME"])
                 return df
